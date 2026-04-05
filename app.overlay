@@ -1,0 +1,21 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+    aliases {
+        modbus0 = &modbus0;
+    };
+};
+
+&uart1 {
+    status = "okay";
+    current-speed = <19200>;
+    pinctrl-0 = <&uart1_default>;
+    pinctrl-1 = <&uart1_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    modbus0: modbus0 {
+        compatible = "zephyr,modbus-serial";
+        status = "okay";
+        de-gpios = <&gpio0 19 GPIO_ACTIVE_HIGH>;
+    };
+};
