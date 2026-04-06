@@ -19,3 +19,25 @@
         de-gpios = <&gpio0 19 GPIO_ACTIVE_HIGH>;
     };
 };
+
+&qspi {
+    status = "okay";
+    external_flash: mx25r6435f@0 {
+        compatible = "nordic,qspi-nor";
+        reg = <0>;
+        size = <DT_SIZE_M(8)>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            /* Renamed from storage_partition to modbus_partition */
+            modbus_partition: partition@0 {
+                label = "modbus_storage";
+                reg = <0x00000000 DT_SIZE_K(64)>;
+            };
+        };
+    };
+};
+
