@@ -1,13 +1,17 @@
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/modbus/modbus.h>
 #include "shared_data.h"
-#include <zephyr/kernel.h>
+
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/fs/fcb.h>
 #include <zephyr/drivers/flash.h>
 #include <errno.h>
+
 #include "shared_data.h"
+
+LOG_MODULE_REGISTER(modbus_server, LOG_LEVEL_DBG);
 
 /* * In Zephyr 4.x, the non-deprecated way to get a partition ID is
  * using DT_FIXED_PARTITION_ID on a DT_NODELABEL.
@@ -25,7 +29,7 @@ void init_storage(void) {
     /* Use the ID derived from the Devicetree Node Label */
     rc = flash_area_open(MODBUS_PARTITION_ID, &fa_ptr);
     if (rc) {
-        printk("Flash area open failed: %d\n", rc);
+        LOG_ERR("Flash area open failed: %d\n", rc);
         return;
     }
 
@@ -36,9 +40,9 @@ void init_storage(void) {
     /* Initialize FCB with the same modern ID */
     rc = fcb_init(MODBUS_PARTITION_ID, &my_fcb);
     if (rc) {
-        printk("FCB init failed or empty (%d)\n", rc);
+        LOG_ERR("FCB init failed or empty (%d)\n", rc);
     } else {
-        printk("FCB initialized on QSPI flash.\n");
+        LOG_INF("FCB initialized on QSPI flash.\n");
     }
 }
 
@@ -54,7 +58,7 @@ static int holding_reg_write(uint16_t addr, uint16_t reg)
     int rc = fcb_append(&my_fcb, sizeof(pkt), &loc);
 
     if (rc == -ENOSPC) {
-        printk("FCB Full, rotating oldest sector...\n");
+        LOG_WRN("FCB Full, rotating oldest sector...\n");
         fcb_rotate(&my_fcb);
         rc = fcb_append(&my_fcb, sizeof(pkt), &loc);
     }
@@ -64,7 +68,7 @@ static int holding_reg_write(uint16_t addr, uint16_t reg)
         rc = flash_area_write(fa_ptr, loc.fe_data_off, &pkt, sizeof(pkt));
         if (rc == 0) {
             fcb_append_finish(&my_fcb, &loc);
-            printk("Stored to QSPI: Reg %d = %d\n", addr, reg);
+            LOG_INF("Stored to QSPI: Reg %d = %d\n", addr, reg);
         }
     }
 
