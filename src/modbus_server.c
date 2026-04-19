@@ -11,6 +11,8 @@
 
 #include "shared_data.h"
 
+#ifdef CONFIG_MODBUS_ROLE_SERVER
+
 LOG_MODULE_REGISTER(modbus_server, LOG_LEVEL_DBG);
 
 /* * In Zephyr 4.x, the non-deprecated way to get a partition ID is
@@ -25,25 +27,33 @@ static const struct flash_area *fa_ptr;
 
 void init_storage(void) {
     int rc;
-
-    /* Use the ID derived from the Devicetree Node Label */
     rc = flash_area_open(MODBUS_PARTITION_ID, &fa_ptr);
-    if (rc) {
-        LOG_ERR("Flash area open failed: %d\n", rc);
-        return;
-    }
+    if (rc) { return; }
 
     my_fcb.f_magic = FCB_MAGIC;
     my_fcb.f_sector_cnt = 16;
     my_fcb.f_sectors = sectors;
 
-    /* Initialize FCB with the same modern ID */
     rc = fcb_init(MODBUS_PARTITION_ID, &my_fcb);
-    if (rc) {
-        LOG_ERR("FCB init failed or empty (%d)\n", rc);
-    } else {
-        LOG_INF("FCB initialized on QSPI flash.\n");
+
+    // If it fails with -5 (EIO) or is empty, erase it so FCB can take over
+    if (rc != 0) {
+        LOG_WRN("Formatting FCB storage...");
+        flash_area_erase(fa_ptr, 0, fa_ptr->fa_size);
+        rc = fcb_init(MODBUS_PARTITION_ID, &my_fcb);
     }
+
+    if (rc == 0) {
+        LOG_INF("FCB initialized successfully");
+    }
+}
+
+static int holding_reg_read(uint16_t addr, uint16_t *reg)
+{
+    /* For testing: return a dummy value (e.g., 123) for any register read */
+    *reg = 123;
+    LOG_DBG("Client read register %d, sending value %d", addr, *reg);
+    return 0;
 }
 
 static int holding_reg_write(uint16_t addr, uint16_t reg)
@@ -78,27 +88,47 @@ static int holding_reg_write(uint16_t addr, uint16_t reg)
 
 #define MODBUS_NODE DT_ALIAS(modbus0)
 
-K_MSGQ_DEFINE(modbus_msgq, sizeof(struct modbus_data_packet), 10, 4);
+
 static struct modbus_user_callbacks server_cbs = {
     .holding_reg_wr = holding_reg_write,
+    .holding_reg_rd = holding_reg_read,
 };
 
 static struct modbus_iface_param server_param = {
     .mode = MODBUS_MODE_RTU,
-    .serial = {.baud = 19200, .parity = UART_CFG_PARITY_NONE},
-    .server = {.user_cb = &server_cbs}
+    .rx_timeout = 50000,
+    .serial = {
+        .baud = 115200,
+        .parity = UART_CFG_PARITY_NONE
+    },
+    .server = {
+        .user_cb = &server_cbs,
+        .unit_id = 1,
+    }
 };
 
+
+// Apply the same fix to the server thread
 void modbus_server_thread(void *p1, void *p2, void *p3)
 {
     init_storage();
 
-    int iface = modbus_iface_get_by_name(DT_NODE_FULL_NAME(MODBUS_NODE));
+    const char iface_name[] = "MODBUS_0";
+    int iface = modbus_iface_get_by_name(iface_name);
+    LOG_INF("Modbus interface index: %d for device: %s",
+         iface,
+         DEVICE_DT_NAME(DT_ALIAS(modbus0)));
 
-    if (modbus_init_server(iface, server_param)) {
+    if (iface < 0) {
+        LOG_ERR("Failed to get Modbus interface");
         return;
     }
 
+    if (modbus_init_server(iface, server_param)) {
+        LOG_ERR("Modbus server failed to initialize!");
+        return;
+    }
+    LOG_INF("Modbus server initialized on Unit ID 1");
 
     while (1) {
         /* In Zephyr, the stack handles server responses in the background
@@ -107,5 +137,6 @@ void modbus_server_thread(void *p1, void *p2, void *p3)
     }
 }
 
-K_THREAD_DEFINE(modbus_srv_tid, 1024, modbus_server_thread, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(modbus_srv_tid, 2048, modbus_server_thread, NULL, NULL, NULL, 7, 0, 0);
 
+#endif

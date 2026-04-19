@@ -2,6 +2,7 @@
 #define SHARED_DATA_H
 
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
 /* Structure for the data you want to save/pass */
 struct modbus_data_packet {
